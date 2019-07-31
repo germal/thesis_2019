@@ -1,0 +1,4 @@
+<launch>
+  <node pkg="robot_setup_tf" type="robot_setup_tf" name="robot_tf_publisher" output="screen">
+</node>
+</launch>
