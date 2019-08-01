@@ -1,0 +1,4 @@
+<launch>
+  <node pkg="odom_stamped_pkg" type="odom_stamped_pkg" name="odometry_publisher" output="screen">
+</node>
+</launch>

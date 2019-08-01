@@ -1,6 +1,9 @@
 #! /usr/bin/env python
 
 
+# This program will just publish the linear and angular velocity in a way that
+# it will make the robot move in square until the node is stopped.
+
 import rospy
 import sys
 import roslib
@@ -52,7 +55,7 @@ class Move_BB8():
 
                     if (self.turn_flag ==0):
                         self.vel.angular.z = 0
-                        self.vel.linear.x = 0.0
+                        self.vel.linear.x = 0.3
                         self.pub.publish(self.vel)
                         rospy.sleep(3)
 
