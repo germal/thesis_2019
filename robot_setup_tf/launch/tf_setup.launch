@@ -1,4 +1,18 @@
-<launch>
-  <node pkg="robot_setup_tf" type="robot_setup_tf" name="robot_tf_publisher" output="screen">
+<!--
+This launch file is an example for 3D registration using DSO stero reconstruction
+
+<node pkg="tf" type="static_transform_publisher" name="tf_cam_robot" args="-0.0136 -0.0075 -0.1870 0 0 0.01665 /camera_pose_frame /base_link 50">
 </node>
+-->
+
+
+<launch>
+
+  <node pkg="tf" type="static_transform_publisher" name="tf_cam_robot" args="-0.0136 -0.0075 -0.1870 0 0 0.01665 /camera_pose_frame /base_link 10000">
+  </node>
+
+<!--<node pkg="tf" type="static_transform_publisher" name="tf_scan_cam" args="0.0456 0.0075 -0.0150 0 0 0.01665  /base_scan /camera_pose_frame  10000">
+</node>
+-->
+
 </launch>

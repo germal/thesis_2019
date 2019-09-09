@@ -31,6 +31,8 @@ class Move_BB8():
 
         self.turn_flag = 0
 
+        self.count = 0
+
 
         self.rate = rospy.Rate(10) # 10Hz freq
         self.loop = loop
@@ -53,18 +55,33 @@ class Move_BB8():
 
 
 
+                        # if it has done three loops stop moving
+                    if (self.count > 14):  # it will turn N times : count = 8*N - 2
+                        self.vel.linear.x = 0
+                        self.vel.angular.z = 0
+                        self.pub.publish(self.vel)
+                        rospy.loginfo("Done looping")
+                        rospy.sleep(5)
+                        self.turn_flag = 5
+
+                        # go forward for about 1 metre
                     if (self.turn_flag ==0):
                         self.vel.angular.z = 0
-                        self.vel.linear.x = 0.3
+                        self.vel.linear.x = 0.24
+                        self.count = self.count + 1
                         self.pub.publish(self.vel)
-                        rospy.sleep(3)
+                        rospy.loginfo("Cmd Published")
+                        rospy.sleep(4)
 
                         self.turn_flag = 1
 
-                    else:
+                    # turn left 90 degrees
+                    if (self.turn_flag == 1):
                         self.vel.linear.x = 0
-                        self.vel.angular.z = 0.31
+                        self.vel.angular.z = 0.3135
+                        self.count = self.count + 1
                         self.pub.publish(self.vel)
+                        rospy.loginfo("Cmd Published")
                         rospy.sleep(5)
                         self.turn_flag = 0
 
@@ -72,7 +89,8 @@ class Move_BB8():
 
 
 
-                    rospy.loginfo("Cmd Published")
+
+
 
 
 
