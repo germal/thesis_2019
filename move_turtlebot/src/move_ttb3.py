@@ -59,7 +59,7 @@ class Move_BB8():
         self.goal.target_pose.pose.orientation.z = 0
         self.goal.target_pose.pose.orientation.w = 1
 
-        # Use the map frame to define goal poses
+        # Goal pose is defined in the frame of camera_odom_frame
         self.goal.target_pose.header.frame_id = 'camera_odom_frame'
 
         # Set the time as now. Update this later
@@ -107,14 +107,18 @@ class Move_BB8():
 
     def odomCB(self, data):
 
+
         if (data.pose.covariance[0] > 0.1):
             self.kidnap_flag = 1
+            self.relocalization_flag = 0
+
         # If it is the first time running this, take the current position as the old pose.
         if (self.read_first_odom == 0):
             self.distance = 0.01
             self.old_x = data.pose.pose.position.x
             self.old_y = data.pose.pose.position.y
             self.old_z = data.pose.pose.position.z
+            self.read_first_odom = 1
         else:
 
            # Calculating the difference of the consecutive poses.
@@ -122,13 +126,19 @@ class Move_BB8():
             self.old_x = data.pose.pose.position.x
             self.old_y = data.pose.pose.position.y
             self.old_z = data.pose.pose.position.z
-            if self.distance > 1:
+
+            if self.distance > 1: # If the jump pose is observed, then set up the relocalization flag
                 print(self.distance)
+                print('Relocalization event occured!!!')
                 self.relocalization_flag = 1
+                self.kidnap_flag = 0 
+                # Go back to the base
+                self.csend_goal()
 
 
 
     def scanCB(self, data):
+
 
        # Reference : http://www.theconstructsim.com/wall-follower-algorithm/
 
@@ -244,16 +254,8 @@ class Move_BB8():
                         self.turn_flag = 0
 
 
-
-
-
-
-
-
-
-
     def select_menu(self):
-        print('Choose your input 1. Mappin 2. Explore 3. Go back to base')
+        print('Choose your input 1. Mapping (hard-coded 1 x 1 square) 2. Explore (right-wall following) 3. Go back to base (0,0)')
         self.cuser_select = input()
 
         if self.cuser_select == 1:
@@ -270,6 +272,7 @@ class Move_BB8():
 
     def csend_goal(self):
         self.move_base.send_goal(self.goal)
+        self.select_menu()
 
     def shutdownhook(self):
         # works betsruter than the rospy.is_shutdown()
