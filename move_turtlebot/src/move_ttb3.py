@@ -7,6 +7,7 @@
 import rospy
 import sys
 import roslib
+import math
 
 import cv2
 
@@ -16,8 +17,6 @@ import numpy as np
 
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan
-
-
 from nav_msgs.msg import Odometry
 
 
@@ -26,9 +25,21 @@ class Move_BB8():
 
 
     def __init__(self, loop):
-        print ("Constructor for class")
+#        print ("Constructor for class")
         self.pub = rospy.Publisher('/cmd_vel', Twist, queue_size = 1)
         self.sub = rospy.Subscriber('/scan', LaserScan, self.scanCB)
+        self.sub2 = rospy.Subscriber('/camera/odom/sample', Odometry, self.odomCB)
+
+     # To calculate the distance between old and current pose.
+        self.old_x = 0
+        self.old_y = 0
+        self.old_z = 0
+        self.initiate = 0
+        self.distance = 0
+        self.relocalization_flag = 0
+        self.kidnap_flag = 0
+
+
        # to store sensor datas
         self.right_sensor = 0
         self.left_sensor = 0
@@ -36,10 +47,13 @@ class Move_BB8():
         self.front_right = 0
         self.front_left = 0
 
-        self.activate = 0
+        self.menu_select = loop
+        print('Mode selected ', self.menu_select)
 
 
         self.start_time = rospy.Time.now()
+
+        self.count_time = rospy.Time.now()
 
 
 
@@ -61,6 +75,33 @@ class Move_BB8():
 
 
 
+
+    def odomCB(self, data):
+
+       if (data.pose.covariance[0] > 0.1):
+           self.kidnap_flag = 1;
+
+
+        # If it is the first time running this, take the current position as the old pose.
+       if self.initiate == 0:
+           self.distance = 0
+           self.initiate = 1
+           self.old_x = data.pose.pose.position.x
+           self.old_y = data.pose.pose.position.y
+           self.old_z = data.pose.pose.position.z
+       else:
+           # Calculating the difference of the consecutive poses.
+           self.distance = math.sqrt((data.pose.pose.position.x - self.old_x)**2 +(data.pose.pose.position.y - self.old_y)**2 + (data.pose.pose.position.z - self.old_z)**2)
+           self.old_x = data.pose.pose.position.x
+           self.old_y = data.pose.pose.position.y
+           self.old_z = data.pose.pose.position.z
+           if self.distance > 1:
+
+               print(self.distance)
+               self.relocalization_flag = 1
+
+
+
     def scanCB(self, data):
 
        # Reference : http://www.theconstructsim.com/wall-follower-algorithm/
@@ -73,9 +114,7 @@ class Move_BB8():
         self.front_left = (sum(scanarray[80:90]))/10
         self.front_right = (sum(scanarray[270:280]))/10
 
-        print(' Left : ' ,self.front_left)
-        print(' Right : ' ,self.front_right)
-        print(' Front : ', self.front_sensor )
+
 
         # This callback configures how thw right wall following is decided.
 
@@ -87,70 +126,55 @@ class Move_BB8():
         #  4. obstacles in front,left,right
 
        # we only follow the wall when obstacles is detected only on the right side (since this is right wall following)
+        if  self.relocalization_flag == 1 and self.kidnap_flag == 1:
 
-        if self.front_sensor > 0.8 and self.front_left > 0.6 and self.front_right > 0.6:
-            # find the wall
-            self.vel.linear.x = 0.05
-            self.vel.angular.z = -0.1
-            self.pub.publish(self.vel)
-        elif self.front_sensor < 0.8 and self.front_left > 0.6 and self.front_right > 0.6:
-            # turn left
-            self.vel.linear.x = 0.0
-            self.vel.angular.z = 0.1
-            self.pub.publish(self.vel)
+            if self.front_sensor > 0.8 and self.front_left > 0.6 and self.front_right > 0.6:
+                # find the wall
+                self.vel.linear.x = 0.05
+                self.vel.angular.z = -0.1
+                self.pub.publish(self.vel)
+            elif self.front_sensor < 0.8 and self.front_left > 0.6 and self.front_right > 0.6:
+                # turn left
+                self.vel.linear.x = 0.0
+                self.vel.angular.z = 0.1
+                self.pub.publish(self.vel)
 
-        elif self.front_sensor > 0.8 and self.front_left > 0.6 and self.front_right < 0.6:
-            # follow the right side of the wall
-            self.vel.linear.x = 0.05
-            self.vel.angular.z = 0
-            self.pub.publish(self.vel)
-        elif self.front_sensor > 0.8 and self.front_left < 0.6 and self.front_right > 0.6:
-            # find the wall
-            self.vel.linear.x = 0.05
-            self.vel.angular.z = -0.1
-            self.pub.publish(self.vel)
-        elif self.front_sensor < 0.8 and self.front_left > 0.6 and self.front_right < 0.6:
-            # turn left
-            self.vel.linear.x = 0.0
-            self.vel.angular.z = 0.1
-            self.pub.publish(self.vel)
-        elif self.front_sensor < 0.8 and self.front_left < 0.6 and self.front_right > 0.6:
-            # turn left
-            self.vel.linear.x = 0.0
-            self.vel.angular.z = 0.1
-            self.pub.publish(self.vel)
-        elif self.front_sensor < 0.8 and self.front_left < 0.6 and self.front_right < 0.6:
-            # turn left
-            self.vel.linear.x = 0.0
-            self.vel.angular.z = 0.1
-            self.pub.publish(self.vel)
-        elif self.front_sensor > 0.8 and self.front_left < 0.6 and self.front_right < 0.6:
-            # find the wall
-            self.vel.linear.x = 0.05
-            self.vel.angular.z = -0.1
-            self.pub.publish(self.vel)
-        else:
-            # Unexpeceted case, stop the robot and print the log
-            self.vel.linear.x = 0
-            self.vel.angular.z = 0
-            self.pub.publish(self.vel)
-            print ('there is an error in the wall-following algorithm, please retry')
-
-
-
-
-
-
-
-        # print (rospy.Time.now()-self.start_time).to_sec()
-        if ((rospy.Time.now()-self.start_time).to_sec() > 100):
-            self.ctrl_c = True
-
-
-
-
-
-
+            elif self.front_sensor > 0.8 and self.front_left > 0.6 and self.front_right < 0.6:
+                # follow the right side of the wall
+                self.vel.linear.x = 0.05
+                self.vel.angular.z = 0
+                self.pub.publish(self.vel)
+            elif self.front_sensor > 0.8 and self.front_left < 0.6 and self.front_right > 0.6:
+                # find the wall
+                self.vel.linear.x = 0.05
+                self.vel.angular.z = -0.1
+                self.pub.publish(self.vel)
+            elif self.front_sensor < 0.8 and self.front_left > 0.6 and self.front_right < 0.6:
+                # turn left
+                self.vel.linear.x = 0.0
+                self.vel.angular.z = 0.1
+                self.pub.publish(self.vel)
+            elif self.front_sensor < 0.8 and self.front_left < 0.6 and self.front_right > 0.6:
+                # turn left
+                self.vel.linear.x = 0.0
+                self.vel.angular.z = 0.1
+                self.pub.publish(self.vel)
+            elif self.front_sensor < 0.8 and self.front_left < 0.6 and self.front_right < 0.6:
+                # turn left
+                self.vel.linear.x = 0.0
+                self.vel.angular.z = 0.1
+                self.pub.publish(self.vel)
+            elif self.front_sensor > 0.8 and self.front_left < 0.6 and self.front_right < 0.6:
+                # find the wall
+                self.vel.linear.x = 0.05
+                self.vel.angular.z = -0.1
+                self.pub.publish(self.vel)
+            else:
+                # Unexpeceted case, stop the robot and print the log
+                self.vel.linear.x = 0
+                self.vel.angular.z = 0
+                self.pub.publish(self.vel)
+                print ('there is an error in the wall-following algorithm, please retry')
 
 
 
@@ -158,19 +182,20 @@ class Move_BB8():
 
             while not self.ctrl_c:
                 connections = self.pub.get_num_connections()
-                if connections > 0 and self.activate == 1:
+                if connections > 0 and self.menu_select == 1: # This is used for mapping.
 
 
                         # if it has done three loops stop moving
-                    if (self.count > 15):  # it will turn N times : count = 8*N - 2
+                    if (self.count > 25):  # it will loop N times : count = 8*N - 2
                         self.vel.linear.x = 0
                         self.vel.angular.z = 0
                         self.pub.publish(self.vel)
                         rospy.loginfo("Done looping")
+                        self.menu_select = 0 # stop mapping
                         self.turn_flag = 5
                         # go forward for about 1 metre
                     elif (self.turn_flag ==0):
-                        self.vel.angular.z = 0
+                        self.vel.angular.z = -0.22
                         self.vel.linear.x = 0.24
                         self.count = self.count + 1
                         self.pub.publish(self.vel)
@@ -197,8 +222,14 @@ class Move_BB8():
 
 
 
+    def select_menu(self):
+
+        print('Choose your input 1. Mappin 2. Explore 3. Go back to base')
+
     def shutdownhook(self):
         # works betsruter than the rospy.is_shutdown()
+        print('The time of operation equals to ')
+        print (rospy.Time.now()-self.start_time).to_sec()
         self.vel.linear.x = 0
         self.vel.angular.z = 0
         self.pub.publish(self.vel)
@@ -213,7 +244,9 @@ class Move_BB8():
 
 if __name__ == '__main__':
     rospy.init_node('ttb3_move', anonymous=True)
-    obj = Move_BB8(0)
+    print('Please choose your input 1. Mapping 2. Explore')
+    user_select = input()
+    obj = Move_BB8(user_select)
     try:
         obj.move_bb8()
         rospy.spin()
