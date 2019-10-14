@@ -26,7 +26,7 @@ class Move_BB8():
 
 
 
-    def __init__(self, loop):
+    def __init__(self,exploration_method, loop, duration):
 #        print ("Constructor for class")
         self.pub = rospy.Publisher('/cmd_vel', Twist, queue_size = 1)
         self.sub = rospy.Subscriber('/scan', LaserScan, self.scanCB)
@@ -43,9 +43,16 @@ class Move_BB8():
         self.old_z = 0
         self.read_first_odom = 0
         self.distance = 0
-        self.relocalization_flag = 0
+        self.relocalization_flag = 1
         self.kidnap_flag = 0
         self.cuser_select = 0
+
+        self.menu_select = exploration_method
+        self.explore_duration = duration
+        self.num_loops = loop
+
+        # 1 for the square  2 for the right wall following
+        print('Mode selected ', self.menu_select)
 
 
        # Init goal.
@@ -58,16 +65,10 @@ class Move_BB8():
         self.goal.target_pose.pose.orientation.y = 0
         self.goal.target_pose.pose.orientation.z = 0
         self.goal.target_pose.pose.orientation.w = 1
-
         # Goal pose is defined in the frame of camera_odom_frame
         self.goal.target_pose.header.frame_id = 'camera_odom_frame'
-
         # Set the time as now. Update this later
         self.goal.target_pose.header.stamp = rospy.Time.now()
-
-        # You can send a goal like this
-    #    self.move_base.send_goal(self.goal)
-
 
 
        # to store sensor datas
@@ -77,29 +78,15 @@ class Move_BB8():
         self.front_right = 0
         self.front_left = 0
 
-        self.menu_select = loop
-        print('Mode selected ', self.menu_select)
-
-
+       # Init other variables.
         self.start_time = rospy.Time.now()
-        self.count_time = rospy.Time.now()
-
-
-
         self.turn_flag = 0
-
         self.count = 0
-
-
         self.rate = rospy.Rate(10) # 10Hz freq
         self.loop = loop
         self.ctrl_c = False #  This is an indicator whether user has terminated the program yet or not/
         self.vel = Twist() # the variable with the type Twist
         self.vel.linear.x = self.loop
-
-
-        self.testGlobal = 0
-
         rospy.on_shutdown(self.shutdownhook) # this gets triggered on shutdown
 
 
@@ -108,9 +95,11 @@ class Move_BB8():
     def odomCB(self, data):
 
 
-        if (data.pose.covariance[0] > 0.1):
-            self.kidnap_flag = 1
+        if (data.pose.covariance[0] > 0.1): # if the tracking confidence above 0.1
+            self.kidnap_flag = 1           # Flag that the kidnap event has happened.
             self.relocalization_flag = 0
+        #    print('Cancelling move_base goal due to kidnapping') # If the navigation stack was in progress, preempt the goal.
+            self.move_base.cancel_goal()
 
         # If it is the first time running this, take the current position as the old pose.
         if (self.read_first_odom == 0):
@@ -131,7 +120,7 @@ class Move_BB8():
                 print(self.distance)
                 print('Relocalization event occured!!!')
                 self.relocalization_flag = 1
-                self.kidnap_flag = 0 
+                self.kidnap_flag = 0
                 # Go back to the base
                 self.csend_goal()
 
@@ -162,8 +151,9 @@ class Move_BB8():
         #  4. obstacles in front,left,right
 
        # we only follow the wall when obstacles is detected only on the right side (since this is right wall following)
-
-        if   self.kidnap_flag == 1 or self.cuser_select == 2: # if the robot is kidnapped, run the right wall following to
+       # it is assumed that during the mappign phase, the camera won't be kidnapped.
+        if   ((rospy.Time.now()-self.start_time).to_sec() < self.explore_duration and self.menu_select ==2) or self.cuser_select ==1:
+            # if the robot is kidnapped, run the right wall following to
 
             if self.front_sensor > 0.8 and self.front_left > 0.6 and self.front_right > 0.6:
                 # find the wall
@@ -212,71 +202,110 @@ class Move_BB8():
                 self.vel.angular.z = 0
                 self.pub.publish(self.vel)
                 print ('there is an error in the wall-following algorithm, please retry')
+      # If the time has passed over the set duration then go to the menu.
+        elif ((rospy.Time.now()-self.start_time).to_sec() > self.explore_duration and self.menu_select ==2) and self.cuser_select == 0:
+            self.select_menu() # go to menu selection
+
+
+
+
+
 
 
 
     def run_bb8(self):
-
-
-
+            # This function will run infinitely until the user decides to terminate program
+            # by pressing Ctrl + C
             while not self.ctrl_c:
+
                 connections = self.pub.get_num_connections()
-                if connections > 0 and self.menu_select == 1: # This is used for mapping.
+
+                # If the robot has been opearting more than 500 seconds, go back to charging station.
+                if ((rospy.Time.now()-self.start_time).to_sec() > 250):
+                    print('Battery Low, going to the charging base')
+                    self.csend_goal()
+                    self.cuser_select = 3 # Stop the wall following.
+                    self.turn_flag = 5 # Stop the square movement.
+
+
+                if connections > 0 and self.menu_select == 1: # This is only used for mapping.
 
 
                         # if it has done three loops stop moving
-                    if (self.count > 22):  # it will loop N times : count = 8*N - 2
+                    if (self.count > (self.num_loops*8)):  # it will loop N times : count = 8*N - 2
                         self.vel.linear.x = 0
                         self.vel.angular.z = 0
-                        self.pub.publish(self.vel)
+                        self.pub.publish(self.vel) # Stop the robot
                         rospy.loginfo("Done looping")
                         self.menu_select = 0 # stop mapping
                         self.turn_flag = 5
-                        self.select_menu()
+                        self.select_menu() # Go to menu
                         # go forward for about 1 metre
-                    elif (self.turn_flag ==0):
-                        self.vel.angular.z = -0.24
-                        self.vel.linear.x = 0.24
+                    elif (self.turn_flag ==1):
+                        self.vel.angular.z = 0
+                        self.vel.linear.x = 0.20
                         self.count = self.count + 1
                         self.pub.publish(self.vel)
                         rospy.loginfo("Straight Cmd Published")
-                        rospy.sleep(4)
+                        self.turn_flag = 0
+                        rospy.sleep(5)
 
-                        self.turn_flag = 1
+
                     # turn left 90 degrees
-                    elif (self.turn_flag == 1):
+                    elif (self.turn_flag == 0):
                         self.vel.linear.x = 0
-                        self.vel.angular.z = 0.3125
+                        self.vel.angular.z = 0.1953
                         self.count = self.count + 1
                         self.pub.publish(self.vel)
                         rospy.loginfo("Turning Cmd Published")
-                        rospy.sleep(5)
-                        self.turn_flag = 0
+                        self.turn_flag = 1
+                        rospy.sleep(8)
+
 
 
     def select_menu(self):
-        print('Choose your input 1. Mapping (hard-coded 1 x 1 square) 2. Explore (right-wall following) 3. Go back to base (0,0)')
+
+   # Stop the robot and let the user to choose menu.
+        self.vel.linear.x = 0
+        self.vel.angular.z = 0
+        self.pub.publish(self.vel)
+
+        print('Mapping has finished, Choose 1. Keep Exploring 2. Go to base')
         self.cuser_select = input()
-
         if self.cuser_select == 1:
-            self.menu_select = 1
-            self.turn_flag = 0
-            self.count = 0
-            self.run_bb8()
-
+            print ('Keep Exploring')
         elif self.cuser_select == 2:
-            print ('start right wall following')
-
-        elif self.cuser_select == 3:
+            print ('Going to base')
             self.csend_goal()
 
     def csend_goal(self):
-        self.move_base.send_goal(self.goal)
-        self.select_menu()
+
+   # Stop the robot and let the user to choose menu.
+        self.vel.linear.x = 0
+        self.vel.angular.z = 0
+        self.pub.publish(self.vel)
+
+        # Move the robot to charging base
+        print('Sending a base goal')
+
+
+        if self.kidnap_flag == 1: # If the robot is kidnapped
+            print('Goal cancelled')
+            self.goal.target_pose.header.stamp = rospy.Time.now()
+            self.move_base.cancel_goal() # If it is kidnapped, cancel the goal
+            self.cuser_select = 1 # reactivate right wall following.
+
+
+        if self.relocalization_flag == 1: # If the robot is relocalized then, keep move to move_base
+            self.goal.target_pose.header.stamp = rospy.Time.now()
+            self.move_base.send_goal(self.goal)
+            #self.move_base.wait_for_result()
+            #self.move_base.get_result()
+
 
     def shutdownhook(self):
         # works betsruter than the rospy.is_shutdown()
-        print('The time of operation equals to ')
+        print('The total time of operation equals to ')
         print (rospy.Time.now()-self.start_time).to_sec()
         self.vel.linear.x = 0
         self.vel.angular.z = 0
@@ -285,11 +314,11 @@ class Move_BB8():
         self.ctrl_c = True
 
     def move_bb8(self):
-        if (self.menu_select == 1):
-            rospy.loginfo("Moving the Turtlebot 3 in square!")
-            self.run_bb8()
-        elif (self.menu_select == 2):
-            self.select_menu()
+
+
+        rospy.loginfo("Starting the node")
+        self.run_bb8()
+
 
 
 
@@ -297,10 +326,16 @@ class Move_BB8():
 
 if __name__ == '__main__':
     rospy.init_node('ttb3_move', anonymous=True)
-    print('Please choose your input 1. Mapping (use discrete square loops) 2. Look for other options ')
-
-    user_select = input()
-    obj = Move_BB8(user_select)
+    print('Please choose your mapping method 1. 1m x 1m Square Loop 2. Right Wall Following')
+    method_choice = input()
+    if method_choice == 1:
+        print('How many square loops would you like to do??')
+        user_loops = input()
+        obj = Move_BB8(method_choice,user_loops,0)
+    elif method_choice ==2:
+        print('How many seconds would you like the wall-following algorithm to be running?')
+        user_duration = input()
+        obj = Move_BB8(method_choice,0,user_duration)
     try:
         obj.move_bb8()
         rospy.spin()
