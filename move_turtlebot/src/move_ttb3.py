@@ -97,6 +97,7 @@ class Move_BB8():
 
         if (data.pose.covariance[0] > 0.1): # if the tracking confidence above 0.1
             self.kidnap_flag = 1           # Flag that the kidnap event has happened.
+            print('The robot has been kidnapped')
             self.relocalization_flag = 0
         #    print('Cancelling move_base goal due to kidnapping') # If the navigation stack was in progress, preempt the goal.
             self.move_base.cancel_goal()
@@ -116,7 +117,7 @@ class Move_BB8():
             self.old_y = data.pose.pose.position.y
             self.old_z = data.pose.pose.position.z
 
-            if self.distance > 1: # If the jump pose is observed, then set up the relocalization flag
+            if self.distance > 2: # If the jump pose is observed, then set up the relocalization flag
                 print(self.distance)
                 print('Relocalization event occured!!!')
                 self.relocalization_flag = 1
@@ -155,43 +156,43 @@ class Move_BB8():
         if   ((rospy.Time.now()-self.start_time).to_sec() < self.explore_duration and self.menu_select ==2) or self.cuser_select ==1:
             # if the robot is kidnapped, run the right wall following to
 
-            if self.front_sensor > 0.8 and self.front_left > 0.6 and self.front_right > 0.6:
+            if self.front_sensor > 0.8 and self.front_left > 0.65 and self.front_right > 0.65:
                 # find the wall
                 self.vel.linear.x = 0.05
                 self.vel.angular.z = -0.1
                 self.pub.publish(self.vel)
-            elif self.front_sensor < 0.8 and self.front_left > 0.6 and self.front_right > 0.6:
+            elif self.front_sensor < 0.8 and self.front_left > 0.65 and self.front_right > 0.65:
                 # turn left
                 self.vel.linear.x = 0.0
                 self.vel.angular.z = 0.1
                 self.pub.publish(self.vel)
 
-            elif self.front_sensor > 0.8 and self.front_left > 0.6 and self.front_right < 0.6:
+            elif self.front_sensor > 0.8 and self.front_left > 0.65 and self.front_right < 0.65:
                 # follow the right side of the wall
                 self.vel.linear.x = 0.05
                 self.vel.angular.z = 0
                 self.pub.publish(self.vel)
-            elif self.front_sensor > 0.8 and self.front_left < 0.6 and self.front_right > 0.6:
+            elif self.front_sensor > 0.8 and self.front_left < 0.65 and self.front_right > 0.65:
                 # find the wall
                 self.vel.linear.x = 0.05
                 self.vel.angular.z = -0.1
                 self.pub.publish(self.vel)
-            elif self.front_sensor < 0.8 and self.front_left > 0.6 and self.front_right < 0.6:
+            elif self.front_sensor < 0.8 and self.front_left > 0.65 and self.front_right < 0.65:
                 # turn left
                 self.vel.linear.x = 0.0
                 self.vel.angular.z = 0.1
                 self.pub.publish(self.vel)
-            elif self.front_sensor < 0.8 and self.front_left < 0.6 and self.front_right > 0.6:
+            elif self.front_sensor < 0.8 and self.front_left < 0.65 and self.front_right > 0.65:
                 # turn left
                 self.vel.linear.x = 0.0
                 self.vel.angular.z = 0.1
                 self.pub.publish(self.vel)
-            elif self.front_sensor < 0.8 and self.front_left < 0.6 and self.front_right < 0.6:
+            elif self.front_sensor < 0.8 and self.front_left < 0.65 and self.front_right < 0.65:
                 # turn left
                 self.vel.linear.x = 0.0
                 self.vel.angular.z = 0.1
                 self.pub.publish(self.vel)
-            elif self.front_sensor > 0.8 and self.front_left < 0.6 and self.front_right < 0.6:
+            elif self.front_sensor > 0.8 and self.front_left < 0.65 and self.front_right < 0.65:
                 # find the wall
                 self.vel.linear.x = 0.05
                 self.vel.angular.z = -0.1
@@ -220,8 +221,12 @@ class Move_BB8():
 
                 connections = self.pub.get_num_connections()
 
-                # If the robot has been opearting more than 500 seconds, go back to charging station.
-                if ((rospy.Time.now()-self.start_time).to_sec() > 250):
+
+                # If the robot has been opearting more than n seconds, go back to charging station.
+                if ((rospy.Time.now()-self.start_time).to_sec() > 150 and (rospy.Time.now()-self.start_time).to_sec() < 152 ):
+                    self.vel.linear.x = 0
+                    self.vel.angular.z = 0
+                    self.pub.publish(self.vel)
                     print('Battery Low, going to the charging base')
                     self.csend_goal()
                     self.cuser_select = 3 # Stop the wall following.
@@ -232,33 +237,34 @@ class Move_BB8():
 
 
                         # if it has done three loops stop moving
-                    if (self.count > (self.num_loops*8)):  # it will loop N times : count = 8*N - 2
+                    if (self.count > (self.num_loops*8-1)):  # it will loop N times : count = 8*N - 1
                         self.vel.linear.x = 0
                         self.vel.angular.z = 0
                         self.pub.publish(self.vel) # Stop the robot
                         rospy.loginfo("Done looping")
                         self.menu_select = 0 # stop mapping
                         self.turn_flag = 5
+                        print(((rospy.Time.now()-self.start_time).to_sec()))
                         self.select_menu() # Go to menu
                         # go forward for about 1 metre
-                    elif (self.turn_flag ==1):
+                    elif (self.turn_flag ==0):
                         self.vel.angular.z = 0
                         self.vel.linear.x = 0.20
                         self.count = self.count + 1
                         self.pub.publish(self.vel)
                         rospy.loginfo("Straight Cmd Published")
-                        self.turn_flag = 0
+                        self.turn_flag = 1
                         rospy.sleep(5)
 
 
                     # turn left 90 degrees
-                    elif (self.turn_flag == 0):
+                    elif (self.turn_flag == 1):
                         self.vel.linear.x = 0
                         self.vel.angular.z = 0.1953
                         self.count = self.count + 1
                         self.pub.publish(self.vel)
                         rospy.loginfo("Turning Cmd Published")
-                        self.turn_flag = 1
+                        self.turn_flag = 0
                         rospy.sleep(8)
 
 
@@ -280,15 +286,8 @@ class Move_BB8():
 
     def csend_goal(self):
 
-   # Stop the robot and let the user to choose menu.
-        self.vel.linear.x = 0
-        self.vel.angular.z = 0
-        self.pub.publish(self.vel)
 
         # Move the robot to charging base
-        print('Sending a base goal')
-
-
         if self.kidnap_flag == 1: # If the robot is kidnapped
             print('Goal cancelled')
             self.goal.target_pose.header.stamp = rospy.Time.now()
@@ -296,9 +295,12 @@ class Move_BB8():
             self.cuser_select = 1 # reactivate right wall following.
 
 
-        if self.relocalization_flag == 1: # If the robot is relocalized then, keep move to move_base
+        if self.relocalization_flag == 1 and (self.cuser_select == 3 or self.cuser_select ==2)  : # If the robot is relocalized then, keep move to move_base
+            print('Sending a base goal')
             self.goal.target_pose.header.stamp = rospy.Time.now()
             self.move_base.send_goal(self.goal)
+            # Sometimes error Received comm state PREEMPTING when in simple state DONE with SimpleActionClient
+            # would occur.
             #self.move_base.wait_for_result()
             #self.move_base.get_result()
 
